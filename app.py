@@ -111,14 +111,33 @@ def guardar_jpg(out_img: Image.Image, quality=85):
     bio.seek(0)
     return bio
 
-def extraer_dni(nombre_archivo: str):
-    m = re.search(r"\b(\d{8})\b", nombre_archivo)
-    return m.group(1) if m else None
+def extraer_identificador(nombre_archivo: str):
+    """
+    Extrae DNI (8 dígitos), Carné de extranjería (9 dígitos)
+    o Pasaporte (alfanumérico 6-12 caracteres) desde el nombre del archivo.
+    También elimina prefijos tipo '1_' o similares.
+    """
+    base = os.path.splitext(nombre_archivo)[0]  # sin extensión
+    base = base.split("_")[-1]  # toma lo que está después del último "_"
+
+    # DNI (8 dígitos)
+    if re.fullmatch(r"\d{8}", base):
+        return base
+
+    # CE (9 dígitos)
+    if re.fullmatch(r"\d{9}", base):
+        return base
+
+    # Pasaporte (alfanumérico, 6–12 caracteres)
+    if re.fullmatch(r"[A-Za-z0-9]{6,12}", base):
+        return base.upper()  # normalizamos a mayúscula
+
+    return None
 
 # =====================
 # VALIDACIÓN
 # =====================
-def validar_imagen(uploaded_file, dni):
+def validar_imagen(uploaded_file, identificador):
     errores = []
     avisos = []
 
@@ -154,9 +173,9 @@ def validar_imagen(uploaded_file, dni):
     if img_cv is None or not fondo_blanco(img_cv):
         avisos.append("Fondo no suficientemente blanco: se normalizará.")
 
-    # DNI en nombre
-    if not (dni and dni.isdigit() and len(dni) == 8):
-        errores.append("El nombre del archivo no contiene un DNI de 8 dígitos.")
+    # Identificador en nombre
+    if not identificador:
+        errores.append("El nombre del archivo no contiene un identificador válido (DNI/CE/Pasaporte).")
 
     return errores, avisos
 
@@ -183,9 +202,6 @@ def corregir_imagen(uploaded_file):
 # =====================
 # UI
 # =====================
-# =====================
-# UI
-# =====================
 st.markdown("<h1 style='color:#910007;'>📸 Validador y Corrector de Fotos SUNEDU</h1>", unsafe_allow_html=True)
 st.markdown("<p>Sube las fotos de los estudiantes para validar y corregir según los criterios SUNEDU.</p>", unsafe_allow_html=True)
 st.markdown("<p style='font-weight:bold; color:#910007;'>Subir fotos de estudiantes</p>", unsafe_allow_html=True)
@@ -195,14 +211,14 @@ uploaded_files = st.file_uploader("", type=["jpg", "jpeg", "png"], accept_multip
 fotos_corregidas = []
 if uploaded_files:
     for uploaded_file in uploaded_files:
-        dni = extraer_dni(uploaded_file.name) or ""
-        titulo = f"📌 DNI: {dni}" if dni else f"📌 Archivo: {uploaded_file.name}"
+        identificador = extraer_identificador(uploaded_file.name) or ""
+        titulo = f"📌 ID: {identificador}" if identificador else f"📌 Archivo: {uploaded_file.name}"
         st.markdown(f"<h3>{titulo}</h3>", unsafe_allow_html=True)
 
         img_original = abrir_normalizado(uploaded_file)
         st.image(img_original, caption=f"Foto subida: {uploaded_file.name}", width=220)
 
-        errores, avisos = validar_imagen(uploaded_file, dni)
+        errores, avisos = validar_imagen(uploaded_file, identificador)
 
         if errores:
             st.error("⛔ Problemas críticos:")
@@ -223,8 +239,8 @@ if uploaded_files:
         else:
             st.success("✅ Imagen corregida y dentro de los límites.")
 
-        st.image(bio, caption=f"Foto corregida: {(dni or 'SIN_DNI')}.jpg", width=220)
-        fotos_corregidas.append((f"{(dni or 'SIN_DNI')}.jpg", bio.getvalue()))
+        st.image(bio, caption=f"Foto corregida: {(identificador or 'SIN_ID')}.jpg", width=220)
+        fotos_corregidas.append((f"{(identificador or 'SIN_ID')}.jpg", bio.getvalue()))
 
     if fotos_corregidas:
         zip_buffer = io.BytesIO()
