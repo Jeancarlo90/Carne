@@ -183,9 +183,12 @@ def corregir_imagen(uploaded_file):
 # =====================
 # UI
 # =====================
+# =====================
+# UI
+# =====================
 st.markdown("<h1 style='color:#910007;'>📸 Validador y Corrector de Fotos SUNEDU</h1>", unsafe_allow_html=True)
 st.markdown("<p>Sube las fotos de los estudiantes para validar y corregir según los criterios SUNEDU.</p>", unsafe_allow_html=True)
-st.markdown("<p style='font-weight:bold;'>Subir fotos de estudiantes</p>", unsafe_allow_html=True)
+st.markdown("<p style='font-weight:bold; color:#910007;'>Subir fotos de estudiantes</p>", unsafe_allow_html=True)
 
 uploaded_files = st.file_uploader("", type=["jpg", "jpeg", "png"], accept_multiple_files=True)
 
