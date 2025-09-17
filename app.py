@@ -33,12 +33,12 @@ def set_background(image_path):
         }}
         /* Caja blanca central */
         .main-container {{
-            background-color: rgba(255, 255, 255, 0.95);
+            background-color: rgba(255, 255, 255, 0.97);
             border-radius: 15px;
-            padding: 30px;
-            margin: 20px auto;
-            max-width: 900px;
-            box-shadow: 0px 4px 12px rgba(0,0,0,0.2);
+            padding: 30px 40px;
+            margin: 30px auto;
+            max-width: 950px;
+            box-shadow: 0px 4px 14px rgba(0,0,0,0.25);
         }}
         </style>
         """,
@@ -133,14 +133,13 @@ if uploaded_files:
         dni = os.path.splitext(uploaded_file.name)[0]  # Usar el nombre como DNI
         st.markdown(f"<h3 style='color:#000000;'>📌 DNI: {dni}</h3>", unsafe_allow_html=True)
 
-        # Mostrar imagen original (orientación corregida)
+        # Mostrar imagen original
         img_original = Image.open(uploaded_file).convert("RGB")
         img_original = ImageOps.exif_transpose(img_original)
         st.image(img_original, caption=f"Foto subida: {uploaded_file.name}", width=200)
 
         # Validar
         errores = validar_imagen(uploaded_file, dni)
-        corregida = False
 
         if errores:
             st.markdown("<p style='color:#000000;'>⚠️ Errores encontrados:</p>", unsafe_allow_html=True)
@@ -153,7 +152,6 @@ if uploaded_files:
             st.markdown("<p style='color:#000000;'>✅ Imagen corregida</p>", unsafe_allow_html=True)
             st.image(corrected_img, caption=f"Foto corregida: {dni}.jpg", width=200)
             fotos_corregidas.append((f"{dni}.jpg", corrected_img.getvalue()))
-            corregida = True
         else:
             st.markdown("<p style='color:#000000;'>✅ La imagen cumple con los requisitos SUNEDU.</p>", unsafe_allow_html=True)
             # Guardar la imagen tal cual en ZIP
