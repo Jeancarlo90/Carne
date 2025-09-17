@@ -6,6 +6,7 @@ import streamlit as st
 import io
 import zipfile
 import base64
+import re
 
 # =====================
 # CONFIGURACIÓN SUNEDU
@@ -14,151 +15,213 @@ IMG_WIDTH = 240
 IMG_HEIGHT = 288
 IMG_DPI = 300
 MAX_FILESIZE_KB = 50
-ALLOWED_EXT = ".jpg"
+ALLOWED_EXTS = {".jpg", ".jpeg", ".png"}
 
 # =====================
-# CONFIGURAR FONDO + ESTILOS
+# FONDO + ESTILO (panel blanco)
 # =====================
 def set_background_and_style(image_path):
     with open(image_path, "rb") as f:
-        data = f.read()
-    encoded = base64.b64encode(data).decode()
+        encoded = base64.b64encode(f.read()).decode()
 
     st.markdown(
         f"""
         <style>
-        /* Fondo completo */
+        /* Fondo de toda la app */
         .stApp {{
             background-image: url("data:image/png;base64,{encoded}");
             background-size: cover;
             background-attachment: fixed;
         }}
-
-        /* Contenedor central blanco translúcido */
-        .main-box {{
-            background-color: rgba(255, 255, 255, 0.95);
+        /* Hace que TODO el contenido se dibuje sobre un panel blanco */
+        .block-container {{
+            background: rgba(255,255,255,0.98);
             border-radius: 18px;
-            padding: 30px 40px;
-            margin: 50px auto;
-            max-width: 950px;
-            box-shadow: 0px 8px 24px rgba(0,0,0,0.25);
+            box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+            padding: 2rem 2.5rem;
+            max-width: 1000px;
         }}
-
-        /* Alinear todo dentro del cuadro */
-        .stMarkdown, .stText, .stImage, .stFileUploader, .stDownloadButton {{
-            color: #000000;
+        /* Header transparente para que se vea el fondo */
+        header, .stToolbar {{ background: transparent; }}
+        /* Texto negro dentro del panel */
+        h1, h2, h3, p, label, span {{ color: #000 !important; }}
+        /* Botón de descarga con un poco más de presencia */
+        .stDownloadButton > button {{
+            border-radius: 10px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }}
+        @media (max-width: 640px) {{
+            .block-container {{ padding: 1.25rem; }}
         }}
         </style>
         """,
         unsafe_allow_html=True
     )
 
-# Fondo con tu imagen
 set_background_and_style("cayetano_central.png")
 
 # =====================
-# FUNCIONES DE VALIDACIÓN
+# UTILIDADES IMAGEN
 # =====================
-def validar_imagen(path, dni):
-    errores = []
-    try:
-        # Validar extensión
-        ext = os.path.splitext(path.name)[1].lower()
-        if ext != ALLOWED_EXT:
-            errores.append("❌ La imagen debe estar en formato JPG (.jpg).")
+def fondo_blanco(img_cv, thr=245, frac_min=0.98):
+    h, w = img_cv.shape[:2]
+    pads = [
+        img_cv[0:10, 0:10],
+        img_cv[0:10, w-10:w],
+        img_cv[h-10:h, 0:10],
+        img_cv[h-10:h, w-10:w],
+        img_cv[0:5, :],
+        img_cv[h-5:h, :],
+        img_cv[:, 0:5],
+        img_cv[:, w-5:w],
+    ]
+    ratios = []
+    for p in pads:
+        if p.size == 0:
+            continue
+        gray = cv2.cvtColor(p, cv2.COLOR_BGR2GRAY)
+        ratios.append((gray >= thr).mean())
+    return all(r >= frac_min for r in ratios) if ratios else False
 
-        # Validar tamaño del archivo
-        filesize_kb = len(path.getbuffer()) / 1024
-        if filesize_kb > MAX_FILESIZE_KB:
-            errores.append(f"❌ La imagen supera los {MAX_FILESIZE_KB} KB ({filesize_kb:.1f} KB).")
-
-        # Validar dimensiones
-        img = Image.open(path)
-        if img.size != (IMG_WIDTH, IMG_HEIGHT):
-            errores.append(f"❌ La imagen debe tener dimensiones exactas de {IMG_WIDTH}x{IMG_HEIGHT}px. (Tiene {img.size[0]}x{img.size[1]}px).")
-
-        # Validar fondo blanco
-        img_cv = cv2.imdecode(np.frombuffer(path.getbuffer(), np.uint8), cv2.IMREAD_COLOR)
-        if img_cv is not None:
-            h, w = img_cv.shape[:2]
-            y1, y2 = min(5, h-1), min(20, h)
-            x1, x2 = min(5, w-1), min(20, w)
-            corner = img_cv[y1:y2, x1:x2]
-            if corner.size > 0:
-                mean_color = corner.mean(axis=(0, 1))
-                if not (mean_color > 240).all():
-                    errores.append("❌ El fondo no es blanco absoluto.")
-        else:
-            errores.append("⚠️ No se pudo analizar la imagen con OpenCV.")
-
-        # Validar nombre del archivo
-        filename = os.path.splitext(path.name)[0]
-        if not (filename.isdigit() and len(filename) == 8):
-            errores.append("❌ El nombre del archivo debe ser exactamente 8 dígitos (ej. 41803077.jpg).")
-
-    except Exception as e:
-        errores.append(f"⚠️ Error procesando la imagen: {e}")
-    return errores
-
-def corregir_imagen(path, dni):
-    img = Image.open(path).convert("RGB")
+def abrir_normalizado(uploaded_file):
+    uploaded_file.seek(0)
+    img = Image.open(uploaded_file)
     img = ImageOps.exif_transpose(img)
-    img = img.resize((IMG_WIDTH, IMG_HEIGHT))
-    new_img = Image.new("RGB", (IMG_WIDTH, IMG_HEIGHT), (255, 255, 255))
-    new_img.paste(img, (0, 0))
+    if img.mode == "RGBA":
+        bg = Image.new("RGBA", img.size, (255,255,255,255))
+        img = Image.alpha_composite(bg, img).convert("RGB")
+    else:
+        img = img.convert("RGB")
+    return img
 
-    output = io.BytesIO()
-    new_img.save(output, "JPEG", dpi=(IMG_DPI, IMG_DPI), quality=85, optimize=True)
+def leer_dpi(img: Image.Image):
+    dpi = img.info.get("dpi")
+    return dpi if isinstance(dpi, tuple) else None
+
+def guardar_jpg(out_img: Image.Image, quality=85):
+    bio = io.BytesIO()
+    out_img.save(
+        bio, "JPEG",
+        dpi=(IMG_DPI, IMG_DPI),
+        quality=quality,
+        optimize=True,
+        progressive=True,
+        subsampling=2
+    )
+    bio.seek(0)
+    return bio
+
+def extraer_dni(nombre_archivo: str):
+    m = re.search(r"\b(\d{8})\b", nombre_archivo)
+    return m.group(1) if m else None
+
+# =====================
+# VALIDACIÓN
+# =====================
+def validar_imagen(uploaded_file, dni):
+    errores = []
+    avisos = []
+
+    # Extensión/MIME
+    ext = os.path.splitext(uploaded_file.name)[1].lower()
+    if ext not in ALLOWED_EXTS:
+        avisos.append("Formato no JPG/JPEG/PNG: se convertirá a JPG.")
+
+    # Tamaño en KB
+    filesize_kb = len(uploaded_file.getbuffer()) / 1024
+    if filesize_kb > MAX_FILESIZE_KB:
+        avisos.append(f"Pesa {filesize_kb:.1f} KB (> {MAX_FILESIZE_KB}). Se recomprimirá.")
+
+    # Apertura normalizada
+    try:
+        img = abrir_normalizado(uploaded_file)
+    except Exception as e:
+        errores.append(f"No se pudo abrir la imagen: {e}")
+        return errores, avisos
+
+    # Dimensiones
+    if img.size != (IMG_WIDTH, IMG_HEIGHT):
+        avisos.append(f"Dimensiones {img.size[0]}x{img.size[1]}: se redimensionará a {IMG_WIDTH}x{IMG_HEIGHT}.")
+
+    # DPI
+    dpi = leer_dpi(img)
+    if dpi != (IMG_DPI, IMG_DPI):
+        avisos.append(f"DPI {dpi}: se fijará a {IMG_DPI}.")
+
+    # Fondo blanco (bordes y esquinas)
+    uploaded_file.seek(0)
+    img_cv = cv2.imdecode(np.frombuffer(uploaded_file.getbuffer(), np.uint8), cv2.IMREAD_COLOR)
+    if img_cv is None or not fondo_blanco(img_cv):
+        avisos.append("Fondo no suficientemente blanco: se normalizará.")
+
+    # DNI en nombre
+    if not (dni and dni.isdigit() and len(dni) == 8):
+        errores.append("El nombre del archivo no contiene un DNI de 8 dígitos.")
+
+    return errores, avisos
+
+# =====================
+# CORRECCIÓN
+# =====================
+def corregir_imagen(uploaded_file):
+    img = abrir_normalizado(uploaded_file)
+    img = img.resize((IMG_WIDTH, IMG_HEIGHT), Image.LANCZOS)
+
+    # Componer en lienzo blanco (garantiza fondo blanco)
+    canvas = Image.new("RGB", (IMG_WIDTH, IMG_HEIGHT), (255, 255, 255))
+    canvas.paste(img, (0, 0))
 
     quality = 85
-    while output.getbuffer().nbytes > MAX_FILESIZE_KB * 1024 and quality > 20:
-        quality -= 15
-        output = io.BytesIO()
-        new_img.save(output, "JPEG", dpi=(IMG_DPI, IMG_DPI), quality=quality, optimize=True)
+    bio = guardar_jpg(canvas, quality=quality)
 
-    output.seek(0)
-    return output
+    while bio.getbuffer().nbytes > MAX_FILESIZE_KB * 1024 and quality > 25:
+        quality -= 10
+        bio = guardar_jpg(canvas, quality=quality)
+
+    return bio, quality
 
 # =====================
-# STREAMLIT APP
+# UI
 # =====================
-st.markdown("<div class='main-box'>", unsafe_allow_html=True)
-
 st.markdown("<h1 style='color:#910007;'>📸 Validador y Corrector de Fotos SUNEDU</h1>", unsafe_allow_html=True)
-st.markdown("<p style='color:#000000;'>Sube las fotos de los estudiantes para validar y corregir según los criterios SUNEDU.</p>", unsafe_allow_html=True)
-st.markdown("<p style='color:#000000; font-weight:bold;'>Subir fotos de estudiantes</p>", unsafe_allow_html=True)
+st.markdown("<p>Sube las fotos de los estudiantes para validar y corregir según los criterios SUNEDU.</p>", unsafe_allow_html=True)
+st.markdown("<p style='font-weight:bold;'>Subir fotos de estudiantes</p>", unsafe_allow_html=True)
 
 uploaded_files = st.file_uploader("", type=["jpg", "jpeg", "png"], accept_multiple_files=True)
 
 fotos_corregidas = []
 if uploaded_files:
     for uploaded_file in uploaded_files:
-        dni = os.path.splitext(uploaded_file.name)[0]
-        st.markdown(f"<h3 style='color:#000000;'>📌 DNI: {dni}</h3>", unsafe_allow_html=True)
+        dni = extraer_dni(uploaded_file.name) or ""
+        titulo = f"📌 DNI: {dni}" if dni else f"📌 Archivo: {uploaded_file.name}"
+        st.markdown(f"<h3>{titulo}</h3>", unsafe_allow_html=True)
 
-        img_original = Image.open(uploaded_file).convert("RGB")
-        img_original = ImageOps.exif_transpose(img_original)
-        st.image(img_original, caption=f"Foto subida: {uploaded_file.name}", width=200)
+        img_original = abrir_normalizado(uploaded_file)
+        st.image(img_original, caption=f"Foto subida: {uploaded_file.name}", width=220)
 
-        errores = validar_imagen(uploaded_file, dni)
+        errores, avisos = validar_imagen(uploaded_file, dni)
 
         if errores:
-            st.markdown("<p style='color:#000000;'>⚠️ Errores encontrados:</p>", unsafe_allow_html=True)
-            for err in errores:
-                st.markdown(f"<p style='color:#000000;'>{err}</p>", unsafe_allow_html=True)
+            st.error("⛔ Problemas críticos:")
+            for e in errores:
+                st.write("-", e)
 
-            st.markdown("<p style='color:#000000;'>⚠️ Corrigiendo...</p>", unsafe_allow_html=True)
-            corrected_img = corregir_imagen(uploaded_file, dni)
-            st.markdown("<p style='color:#000000;'>✅ Imagen corregida</p>", unsafe_allow_html=True)
-            st.image(corrected_img, caption=f"Foto corregida: {dni}.jpg", width=200)
-            fotos_corregidas.append((f"{dni}.jpg", corrected_img.getvalue()))
+        if avisos:
+            st.warning("🛠 Se aplicarán correcciones:")
+            for a in avisos:
+                st.write("-", a)
+
+        with st.spinner("Corrigiendo..."):
+            bio, used_quality = corregir_imagen(uploaded_file)
+
+        size_kb = bio.getbuffer().nbytes / 1024
+        if size_kb > MAX_FILESIZE_KB:
+            st.warning(f"Quedó en {size_kb:.1f} KB (> {MAX_FILESIZE_KB}). Se mantuvo la mejor calidad posible (q={used_quality}).")
         else:
-            st.markdown("<p style='color:#000000;'>✅ La imagen cumple con los requisitos SUNEDU.</p>", unsafe_allow_html=True)
-            buffer = io.BytesIO()
-            uploaded_file.seek(0)
-            buffer.write(uploaded_file.read())
-            buffer.seek(0)
-            fotos_corregidas.append((f"{dni}.jpg", buffer.getvalue()))
+            st.success("✅ Imagen corregida y dentro de los límites.")
+
+        st.image(bio, caption=f"Foto corregida: {(dni or 'SIN_DNI')}.jpg", width=220)
+        fotos_corregidas.append((f"{(dni or 'SIN_DNI')}.jpg", bio.getvalue()))
 
     if fotos_corregidas:
         zip_buffer = io.BytesIO()
@@ -166,6 +229,9 @@ if uploaded_files:
             for nombre, data in fotos_corregidas:
                 zipf.writestr(nombre, data)
         zip_buffer.seek(0)
-        st.download_button("📦 Descargar fotos corregidas (ZIP)", data=zip_buffer, file_name="fotos_corregidas.zip", mime="application/zip")
-
-st.markdown("</div>", unsafe_allow_html=True)
+        st.download_button(
+            "📦 Descargar fotos corregidas (ZIP)",
+            data=zip_buffer,
+            file_name="fotos_corregidas.zip",
+            mime="application/zip"
+        )
