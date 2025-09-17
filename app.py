@@ -114,68 +114,67 @@ def corregir_imagen(path, dni):
 # =====================
 # STREAMLIT APP
 # =====================
-with st.container():
-    st.markdown("<div class='main-container'>", unsafe_allow_html=True)
+st.markdown("<div class='main-container'>", unsafe_allow_html=True)
 
-    # Título en rojo UPCH
-    st.markdown("<h1 style='color:#910007;'>📸 Validador y Corrector de Fotos SUNEDU</h1>", unsafe_allow_html=True)
+# Título en rojo UPCH
+st.markdown("<h1 style='color:#910007;'>📸 Validador y Corrector de Fotos SUNEDU</h1>", unsafe_allow_html=True)
 
-    # Texto descriptivo en negro
-    st.markdown("<p style='color:#000000;'>Sube las fotos de los estudiantes para validar y corregir según los criterios SUNEDU.</p>", unsafe_allow_html=True)
+# Texto descriptivo en negro
+st.markdown("<p style='color:#000000;'>Sube las fotos de los estudiantes para validar y corregir según los criterios SUNEDU.</p>", unsafe_allow_html=True)
 
-    # File uploader con título en negro
-    st.markdown("<p style='color:#000000; font-weight:bold;'>Subir fotos de estudiantes</p>", unsafe_allow_html=True)
-    uploaded_files = st.file_uploader("", type=["jpg", "jpeg", "png"], accept_multiple_files=True)
+# File uploader con título en negro
+st.markdown("<p style='color:#000000; font-weight:bold;'>Subir fotos de estudiantes</p>", unsafe_allow_html=True)
+uploaded_files = st.file_uploader("", type=["jpg", "jpeg", "png"], accept_multiple_files=True)
 
-    fotos_corregidas = []
+fotos_corregidas = []
 
-    if uploaded_files:
-        for uploaded_file in uploaded_files:
-            dni = os.path.splitext(uploaded_file.name)[0]  # Usar el nombre como DNI
-            st.markdown(f"<h3 style='color:#000000;'>📌 DNI: {dni}</h3>", unsafe_allow_html=True)
+if uploaded_files:
+    for uploaded_file in uploaded_files:
+        dni = os.path.splitext(uploaded_file.name)[0]  # Usar el nombre como DNI
+        st.markdown(f"<h3 style='color:#000000;'>📌 DNI: {dni}</h3>", unsafe_allow_html=True)
 
-            # Mostrar imagen original (orientación corregida)
-            img_original = Image.open(uploaded_file).convert("RGB")
-            img_original = ImageOps.exif_transpose(img_original)
-            st.image(img_original, caption=f"Foto subida: {uploaded_file.name}", width=200)
+        # Mostrar imagen original (orientación corregida)
+        img_original = Image.open(uploaded_file).convert("RGB")
+        img_original = ImageOps.exif_transpose(img_original)
+        st.image(img_original, caption=f"Foto subida: {uploaded_file.name}", width=200)
 
-            # Validar
-            errores = validar_imagen(uploaded_file, dni)
-            corregida = False
+        # Validar
+        errores = validar_imagen(uploaded_file, dni)
+        corregida = False
 
-            if errores:
-                st.markdown("<p style='color:#000000;'>⚠️ Errores encontrados:</p>", unsafe_allow_html=True)
-                for err in errores:
-                    st.markdown(f"<p style='color:#000000;'>{err}</p>", unsafe_allow_html=True)
+        if errores:
+            st.markdown("<p style='color:#000000;'>⚠️ Errores encontrados:</p>", unsafe_allow_html=True)
+            for err in errores:
+                st.markdown(f"<p style='color:#000000;'>{err}</p>", unsafe_allow_html=True)
 
-                # Corrección
-                st.markdown("<p style='color:#000000;'>⚠️ Corrigiendo...</p>", unsafe_allow_html=True)
-                corrected_img = corregir_imagen(uploaded_file, dni)
-                st.markdown("<p style='color:#000000;'>✅ Imagen corregida</p>", unsafe_allow_html=True)
-                st.image(corrected_img, caption=f"Foto corregida: {dni}.jpg", width=200)
-                fotos_corregidas.append((f"{dni}.jpg", corrected_img.getvalue()))
-                corregida = True
-            else:
-                st.markdown("<p style='color:#000000;'>✅ La imagen cumple con los requisitos SUNEDU.</p>", unsafe_allow_html=True)
-                # Guardar la imagen tal cual en ZIP
-                buffer = io.BytesIO()
-                uploaded_file.seek(0)
-                buffer.write(uploaded_file.read())
-                buffer.seek(0)
-                fotos_corregidas.append((f"{dni}.jpg", buffer.getvalue()))
+            # Corrección
+            st.markdown("<p style='color:#000000;'>⚠️ Corrigiendo...</p>", unsafe_allow_html=True)
+            corrected_img = corregir_imagen(uploaded_file, dni)
+            st.markdown("<p style='color:#000000;'>✅ Imagen corregida</p>", unsafe_allow_html=True)
+            st.image(corrected_img, caption=f"Foto corregida: {dni}.jpg", width=200)
+            fotos_corregidas.append((f"{dni}.jpg", corrected_img.getvalue()))
+            corregida = True
+        else:
+            st.markdown("<p style='color:#000000;'>✅ La imagen cumple con los requisitos SUNEDU.</p>", unsafe_allow_html=True)
+            # Guardar la imagen tal cual en ZIP
+            buffer = io.BytesIO()
+            uploaded_file.seek(0)
+            buffer.write(uploaded_file.read())
+            buffer.seek(0)
+            fotos_corregidas.append((f"{dni}.jpg", buffer.getvalue()))
 
-        # Exportar ZIP con fotos corregidas
-        if fotos_corregidas:
-            zip_buffer = io.BytesIO()
-            with zipfile.ZipFile(zip_buffer, "w") as zipf:
-                for nombre, data in fotos_corregidas:
-                    zipf.writestr(nombre, data)
-            zip_buffer.seek(0)
-            st.download_button(
-                "📦 Descargar fotos corregidas (ZIP)",
-                data=zip_buffer,
-                file_name="fotos_corregidas.zip",
-                mime="application/zip"
-            )
+    # Exportar ZIP con fotos corregidas
+    if fotos_corregidas:
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, "w") as zipf:
+            for nombre, data in fotos_corregidas:
+                zipf.writestr(nombre, data)
+        zip_buffer.seek(0)
+        st.download_button(
+            "📦 Descargar fotos corregidas (ZIP)",
+            data=zip_buffer,
+            file_name="fotos_corregidas.zip",
+            mime="application/zip"
+        )
 
-    st.markdown("</div>", unsafe_allow_html=True)
+st.markdown("</div>", unsafe_allow_html=True)
