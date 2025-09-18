@@ -7,3 +7,4 @@ pandas
 gdown
 opencv-python
 rembg
+onnxruntime
