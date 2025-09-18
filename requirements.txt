@@ -5,3 +5,5 @@ Pillow
 numpy
 pandas
 gdown
+opencv-python
+
