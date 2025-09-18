@@ -7,6 +7,7 @@ import io
 import zipfile
 import base64
 import re
+from rembg import remove  # <- para eliminar fondo
 
 # =====================
 # CONFIGURACIÓN SUNEDU
@@ -27,13 +28,11 @@ def set_background_and_style(image_path):
     st.markdown(
         f"""
         <style>
-        /* Fondo de toda la app */
         .stApp {{
             background-image: url("data:image/png;base64,{encoded}");
             background-size: cover;
             background-attachment: fixed;
         }}
-        /* Hace que TODO el contenido se dibuje sobre un panel blanco */
         .block-container {{
             background: rgba(255,255,255,0.98);
             border-radius: 18px;
@@ -41,11 +40,8 @@ def set_background_and_style(image_path):
             padding: 2rem 2.5rem;
             max-width: 1000px;
         }}
-        /* Header transparente para que se vea el fondo */
         header, .stToolbar {{ background: transparent; }}
-        /* Texto negro dentro del panel */
         h1, h2, h3, p, label, span {{ color: #000 !important; }}
-        /* Botón de descarga con un poco más de presencia */
         .stDownloadButton > button {{
             border-radius: 10px;
             box-shadow: 0 4px 12px rgba(0,0,0,0.15);
@@ -112,26 +108,14 @@ def guardar_jpg(out_img: Image.Image, quality=85):
     return bio
 
 def extraer_identificador(nombre_archivo: str):
-    """
-    Extrae DNI (8 dígitos), Carné de extranjería (9 dígitos)
-    o Pasaporte (alfanumérico 6-12 caracteres) desde el nombre del archivo.
-    También elimina prefijos tipo '1_' o similares.
-    """
-    base = os.path.splitext(nombre_archivo)[0]  # sin extensión
-    base = base.split("_")[-1]  # toma lo que está después del último "_"
-
-    # DNI (8 dígitos)
+    base = os.path.splitext(nombre_archivo)[0]
+    base = base.split("_")[-1]
     if re.fullmatch(r"\d{8}", base):
         return base
-
-    # CE (9 dígitos)
     if re.fullmatch(r"\d{9}", base):
         return base
-
-    # Pasaporte (alfanumérico, 6–12 caracteres)
     if re.fullmatch(r"[A-Za-z0-9]{6,12}", base):
-        return base.upper()  # normalizamos a mayúscula
-
+        return base.upper()
     return None
 
 # =====================
@@ -140,63 +124,49 @@ def extraer_identificador(nombre_archivo: str):
 def validar_imagen(uploaded_file, identificador):
     errores = []
     avisos = []
-
-    # Extensión/MIME
     ext = os.path.splitext(uploaded_file.name)[1].lower()
     if ext not in ALLOWED_EXTS:
         avisos.append("Formato no JPG/JPEG/PNG: se convertirá a JPG.")
-
-    # Tamaño en KB
     filesize_kb = len(uploaded_file.getbuffer()) / 1024
     if filesize_kb > MAX_FILESIZE_KB:
         avisos.append(f"Pesa {filesize_kb:.1f} KB (> {MAX_FILESIZE_KB}). Se recomprimirá.")
-
-    # Apertura normalizada
     try:
         img = abrir_normalizado(uploaded_file)
     except Exception as e:
         errores.append(f"No se pudo abrir la imagen: {e}")
         return errores, avisos
-
-    # Dimensiones
     if img.size != (IMG_WIDTH, IMG_HEIGHT):
         avisos.append(f"Dimensiones {img.size[0]}x{img.size[1]}: se redimensionará a {IMG_WIDTH}x{IMG_HEIGHT}.")
-
-    # DPI
     dpi = leer_dpi(img)
     if dpi != (IMG_DPI, IMG_DPI):
         avisos.append(f"DPI {dpi}: se fijará a {IMG_DPI}.")
-
-    # Fondo blanco (bordes y esquinas)
     uploaded_file.seek(0)
     img_cv = cv2.imdecode(np.frombuffer(uploaded_file.getbuffer(), np.uint8), cv2.IMREAD_COLOR)
     if img_cv is None or not fondo_blanco(img_cv):
         avisos.append("Fondo no suficientemente blanco: se normalizará.")
-
-    # Identificador en nombre
     if not identificador:
         errores.append("El nombre del archivo no contiene un identificador válido (DNI/CE/Pasaporte).")
-
     return errores, avisos
 
 # =====================
-# CORRECCIÓN
+# CORRECCIÓN (con fondo blanco inteligente)
 # =====================
 def corregir_imagen(uploaded_file):
-    img = abrir_normalizado(uploaded_file)
+    uploaded_file.seek(0)
+    input_data = uploaded_file.read()
+    # Eliminar fondo con rembg
+    output_data = remove(input_data)
+    img = Image.open(io.BytesIO(output_data)).convert("RGBA")  # conserva alpha
     img = img.resize((IMG_WIDTH, IMG_HEIGHT), Image.LANCZOS)
-
-    # Componer en lienzo blanco (garantiza fondo blanco)
+    # Componer sobre lienzo blanco
     canvas = Image.new("RGB", (IMG_WIDTH, IMG_HEIGHT), (255, 255, 255))
-    canvas.paste(img, (0, 0))
-
+    canvas.paste(img, (0, 0), img)  # usar máscara alpha
+    # Guardar JPG con control de calidad
     quality = 85
     bio = guardar_jpg(canvas, quality=quality)
-
     while bio.getbuffer().nbytes > MAX_FILESIZE_KB * 1024 and quality > 25:
         quality -= 10
         bio = guardar_jpg(canvas, quality=quality)
-
     return bio, quality
 
 # =====================
