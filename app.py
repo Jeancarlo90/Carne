@@ -115,18 +115,21 @@ def extraer_identificador(nombre_archivo: str):
     """
     Extrae DNI (8 dígitos), Carné de extranjería (9 dígitos)
     o Pasaporte (alfanumérico 6-12 caracteres) desde el nombre del archivo.
-    Limpia prefijos tipo '1_' y sufijos con nombres.
+    Limpia prefijos tipo '1_' y sufijos con nombres o guiones.
     """
     base = os.path.splitext(nombre_archivo)[0]  # sin extensión
-
-    # Si hay "-", tomar lo que esté antes (ej: "44428590- SOTO ..." → "44428590")
-    if "-" in base:
-        base = base.split("-")[0].strip()
 
     # Si hay "_", tomar lo último (ej: "1_927720733" → "927720733")
     if "_" in base:
         base = base.split("_")[-1].strip()
 
+    # Si hay "-", tomar lo que esté antes (ej: "44428590- SOTO ..." → "44428590")
+    if "-" in base:
+        base = base.split("-")[0].strip()
+
+    # Elimina cualquier espacio extra y deja solo dígitos
+    base = base.strip()
+    
     # DNI (8 dígitos)
     if re.fullmatch(r"\d{8}", base):
         return base
