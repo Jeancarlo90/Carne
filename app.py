@@ -103,43 +103,24 @@ def guardar_jpg(out_img: Image.Image, quality=85):
     return bio
 
 def extraer_identificador(nombre_archivo: str):
-<<<<<<< HEAD
-    base = os.path.splitext(nombre_archivo)[0]
-    base = base.split("_")[-1]
-=======
     """
     Extrae DNI (8 dígitos), Carné de extranjería (9 dígitos)
     o Pasaporte (alfanumérico 6-12 caracteres) desde el nombre del archivo.
-    Limpia prefijos tipo '1_' y sufijos con nombres o guiones.
     """
-    base = os.path.splitext(nombre_archivo)[0]  # sin extensión
+    base = os.path.splitext(nombre_archivo)[0]
 
-    # Si hay "_", tomar lo último (ej: "1_927720733" → "927720733")
     if "_" in base:
         base = base.split("_")[-1].strip()
-
-    # Si hay "-", tomar lo que esté antes (ej: "44428590- SOTO ..." → "44428590")
     if "-" in base:
         base = base.split("-")[0].strip()
-
     base = base.strip()
 
-    # DNI (8 dígitos)
->>>>>>> bdffd59b2c051bc3fc7498e9cdf20421f28e6c87
     if re.fullmatch(r"\d{8}", base):
         return base
     if re.fullmatch(r"\d{9}", base):
         return base
-<<<<<<< HEAD
     if re.fullmatch(r"[A-Za-z0-9]{6,12}", base):
         return base.upper()
-=======
-
-    # Pasaporte (alfanumérico 6–12 caracteres)
-    if re.fullmatch(r"[A-Za-z0-9]{6,12}", base):
-        return base.upper()
-
->>>>>>> bdffd59b2c051bc3fc7498e9cdf20421f28e6c87
     return None
 
 # =====================
@@ -148,14 +129,6 @@ def extraer_identificador(nombre_archivo: str):
 def validar_imagen(uploaded_file, identificador):
     errores = []
     avisos = []
-<<<<<<< HEAD
-    ext = os.path.splitext(uploaded_file.name)[1].lower()
-    if ext not in ALLOWED_EXTS:
-        avisos.append("Formato no JPG/JPEG/PNG: se convertirá a JPG.")
-    filesize_kb = len(uploaded_file.getbuffer()) / 1024
-    if filesize_kb > MAX_FILESIZE_KB:
-        avisos.append(f"Pesa {filesize_kb:.1f} KB (> {MAX_FILESIZE_KB}). Se recomprimirá.")
-=======
 
     ext = os.path.splitext(uploaded_file.name)[1].lower()
     if ext not in ALLOWED_EXTS:
@@ -165,19 +138,11 @@ def validar_imagen(uploaded_file, identificador):
     if filesize_kb > MAX_FILESIZE_KB:
         avisos.append(f"Pesa {filesize_kb:.1f} KB (> {MAX_FILESIZE_KB}). Se recomprimirá.")
 
->>>>>>> bdffd59b2c051bc3fc7498e9cdf20421f28e6c87
     try:
         img = abrir_normalizado(uploaded_file)
     except Exception as e:
         errores.append(f"No se pudo abrir la imagen: {e}")
         return errores, avisos
-<<<<<<< HEAD
-    if img.size != (IMG_WIDTH, IMG_HEIGHT):
-        avisos.append(f"Dimensiones {img.size[0]}x{img.size[1]}: se redimensionará a {IMG_WIDTH}x{IMG_HEIGHT}.")
-    dpi = leer_dpi(img)
-    if dpi != (IMG_DPI, IMG_DPI):
-        avisos.append(f"DPI {dpi}: se fijará a {IMG_DPI}.")
-=======
 
     if img.size != (IMG_WIDTH, IMG_HEIGHT):
         avisos.append(f"Dimensiones {img.size[0]}x{img.size[1]}: se redimensionará a {IMG_WIDTH}x{IMG_HEIGHT}.")
@@ -186,17 +151,14 @@ def validar_imagen(uploaded_file, identificador):
     if dpi != (IMG_DPI, IMG_DPI):
         avisos.append(f"DPI {dpi}: se fijará a {IMG_DPI}.")
 
->>>>>>> bdffd59b2c051bc3fc7498e9cdf20421f28e6c87
     uploaded_file.seek(0)
     img_cv = cv2.imdecode(np.frombuffer(uploaded_file.getbuffer(), np.uint8), cv2.IMREAD_COLOR)
     if img_cv is None or not fondo_blanco(img_cv):
         avisos.append("Fondo no suficientemente blanco: se normalizará.")
-<<<<<<< HEAD
-=======
 
->>>>>>> bdffd59b2c051bc3fc7498e9cdf20421f28e6c87
     if not identificador:
         errores.append("El nombre del archivo no contiene un identificador válido (DNI/CE/Pasaporte).")
+
     return errores, avisos
 
 # =====================
@@ -205,23 +167,19 @@ def validar_imagen(uploaded_file, identificador):
 def corregir_imagen(uploaded_file):
     uploaded_file.seek(0)
     input_data = uploaded_file.read()
-    # Eliminar fondo con rembg
     output_data = remove(input_data)
-    img = Image.open(io.BytesIO(output_data)).convert("RGBA")  # conserva alpha
+    img = Image.open(io.BytesIO(output_data)).convert("RGBA")
     img = img.resize((IMG_WIDTH, IMG_HEIGHT), Image.LANCZOS)
-<<<<<<< HEAD
-    # Componer sobre lienzo blanco
-=======
 
->>>>>>> bdffd59b2c051bc3fc7498e9cdf20421f28e6c87
     canvas = Image.new("RGB", (IMG_WIDTH, IMG_HEIGHT), (255, 255, 255))
-    canvas.paste(img, (0, 0), img)  # usar máscara alpha
-    # Guardar JPG con control de calidad
+    canvas.paste(img, (0, 0), img)
+
     quality = 85
     bio = guardar_jpg(canvas, quality=quality)
     while bio.getbuffer().nbytes > MAX_FILESIZE_KB * 1024 and quality > 25:
         quality -= 10
         bio = guardar_jpg(canvas, quality=quality)
+
     return bio, quality
 
 # =====================
@@ -238,11 +196,9 @@ if uploaded_files:
     for uploaded_file in uploaded_files:
         identificador = extraer_identificador(uploaded_file.name)
         if not identificador:
-            identificador = 'SIN_ID'  # forzar valor si no hay identificador
+            identificador = 'SIN_ID'
 
-        titulo = f"📌 ID: {identificador}"
-        st.markdown(f"<h3>{titulo}</h3>", unsafe_allow_html=True)
-
+        st.markdown(f"<h3>📌 ID: {identificador}</h3>", unsafe_allow_html=True)
         img_original = abrir_normalizado(uploaded_file)
         st.image(img_original, caption=f"Foto subida: {uploaded_file.name}", width=220)
 
