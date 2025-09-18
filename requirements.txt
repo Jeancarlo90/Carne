@@ -6,4 +6,4 @@ numpy
 pandas
 gdown
 opencv-python
-
+rembg
