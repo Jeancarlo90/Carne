@@ -162,9 +162,10 @@ def validar_imagen(uploaded_file, identificador):
     return errores, avisos
 
 # =====================
-# CORRECCIÓN (con fondo blanco inteligente)
+# CORRECCIÓN (dos modos)
 # =====================
 def corregir_imagen(uploaded_file):
+    """Corrige usando rembg (fondo blanco)."""
     uploaded_file.seek(0)
     input_data = uploaded_file.read()
     output_data = remove(input_data)
@@ -182,59 +183,103 @@ def corregir_imagen(uploaded_file):
 
     return bio, quality
 
+def corregir_sin_fondo(uploaded_file):
+    """Corrige tamaño, dpi y peso pero mantiene el fondo original."""
+    img = abrir_normalizado(uploaded_file)
+    img = img.resize((IMG_WIDTH, IMG_HEIGHT), Image.LANCZOS)
+
+    quality = 85
+    bio = guardar_jpg(img, quality=quality)
+    while bio.getbuffer().nbytes > MAX_FILESIZE_KB * 1024 and quality > 25:
+        quality -= 10
+        bio = guardar_jpg(img, quality=quality)
+
+    return bio, quality
+
 # =====================
 # UI
 # =====================
 st.markdown("<h1 style='color:#910007;'>📸 Validador y Corrector de Fotos SUNEDU</h1>", unsafe_allow_html=True)
 st.markdown("<p>Sube las fotos de los estudiantes para validar y corregir según los criterios SUNEDU.</p>", unsafe_allow_html=True)
-st.markdown("<p style='font-weight:bold; color:#910007;'>Subir fotos de estudiantes</p>", unsafe_allow_html=True)
 
-uploaded_files = st.file_uploader("", type=["jpg", "jpeg", "png"], accept_multiple_files=True)
+tab1, tab2 = st.tabs(["✨ Con fondo blanco", "🎨 Mantener fondo"])
 
-fotos_corregidas = []
-if uploaded_files:
-    for uploaded_file in uploaded_files:
-        identificador = extraer_identificador(uploaded_file.name)
-        if not identificador:
-            identificador = 'SIN_ID'
+# TAB 1: CON FONDO BLANCO
+with tab1:
+    st.markdown("<p style='font-weight:bold; color:#910007;'>Subir fotos (se corregirá fondo a blanco)</p>", unsafe_allow_html=True)
+    uploaded_files = st.file_uploader("", type=["jpg", "jpeg", "png"], accept_multiple_files=True, key="fondo")
+    fotos_corregidas = []
+    if uploaded_files:
+        for uploaded_file in uploaded_files:
+            identificador = extraer_identificador(uploaded_file.name) or "SIN_ID"
+            st.markdown(f"<h3>📌 ID: {identificador}</h3>", unsafe_allow_html=True)
+            img_original = abrir_normalizado(uploaded_file)
+            st.image(img_original, caption=f"Foto subida: {uploaded_file.name}", width=220)
 
-        st.markdown(f"<h3>📌 ID: {identificador}</h3>", unsafe_allow_html=True)
-        img_original = abrir_normalizado(uploaded_file)
-        st.image(img_original, caption=f"Foto subida: {uploaded_file.name}", width=220)
+            errores, avisos = validar_imagen(uploaded_file, identificador)
+            if errores:
+                st.error("⛔ Problemas críticos:")
+                for e in errores: st.write("-", e)
+            if avisos:
+                st.warning("🛠 Se aplicarán correcciones:")
+                for a in avisos: st.write("-", a)
 
-        errores, avisos = validar_imagen(uploaded_file, identificador)
+            with st.spinner("Corrigiendo con fondo blanco..."):
+                bio, used_quality = corregir_imagen(uploaded_file)
 
-        if errores:
-            st.error("⛔ Problemas críticos:")
-            for e in errores:
-                st.write("-", e)
+            size_kb = bio.getbuffer().nbytes / 1024
+            if size_kb > MAX_FILESIZE_KB:
+                st.warning(f"Quedó en {size_kb:.1f} KB (> {MAX_FILESIZE_KB}). Mejor calidad posible (q={used_quality}).")
+            else:
+                st.success("✅ Imagen corregida dentro de los límites.")
 
-        if avisos:
-            st.warning("🛠 Se aplicarán correcciones:")
-            for a in avisos:
-                st.write("-", a)
+            st.image(bio, caption=f"Foto corregida (blanco): {identificador}.jpg", width=220)
+            fotos_corregidas.append((f"{identificador}.jpg", bio.getvalue()))
 
-        with st.spinner("Corrigiendo..."):
-            bio, used_quality = corregir_imagen(uploaded_file)
+        if fotos_corregidas:
+            zip_buffer = io.BytesIO()
+            with zipfile.ZipFile(zip_buffer, "w") as zipf:
+                for nombre, data in fotos_corregidas:
+                    zipf.writestr(nombre, data)
+            zip_buffer.seek(0)
+            st.download_button("📦 Descargar ZIP (fondo blanco)", data=zip_buffer, file_name="fotos_fondo_blanco.zip", mime="application/zip")
 
-        size_kb = bio.getbuffer().nbytes / 1024
-        if size_kb > MAX_FILESIZE_KB:
-            st.warning(f"Quedó en {size_kb:.1f} KB (> {MAX_FILESIZE_KB}). Se mantuvo la mejor calidad posible (q={used_quality}).")
-        else:
-            st.success("✅ Imagen corregida y dentro de los límites.")
+# TAB 2: SIN MODIFICAR FONDO
+with tab2:
+    st.markdown("<p style='font-weight:bold; color:#910007;'>Subir fotos (se mantienen fondos originales)</p>", unsafe_allow_html=True)
+    uploaded_files2 = st.file_uploader("", type=["jpg", "jpeg", "png"], accept_multiple_files=True, key="nofondo")
+    fotos_corregidas2 = []
+    if uploaded_files2:
+        for uploaded_file in uploaded_files2:
+            identificador = extraer_identificador(uploaded_file.name) or "SIN_ID"
+            st.markdown(f"<h3>📌 ID: {identificador}</h3>", unsafe_allow_html=True)
+            img_original = abrir_normalizado(uploaded_file)
+            st.image(img_original, caption=f"Foto subida: {uploaded_file.name}", width=220)
 
-        st.image(bio, caption=f"Foto corregida: {identificador}.jpg", width=220)
-        fotos_corregidas.append((f"{identificador}.jpg", bio.getvalue()))
+            errores, avisos = validar_imagen(uploaded_file, identificador)
+            if errores:
+                st.error("⛔ Problemas críticos:")
+                for e in errores: st.write("-", e)
+            if avisos:
+                st.warning("🛠 Se aplicarán correcciones:")
+                for a in avisos: st.write("-", a)
 
-    if fotos_corregidas:
-        zip_buffer = io.BytesIO()
-        with zipfile.ZipFile(zip_buffer, "w") as zipf:
-            for nombre, data in fotos_corregidas:
-                zipf.writestr(nombre, data)
-        zip_buffer.seek(0)
-        st.download_button(
-            "📦 Descargar fotos corregidas (ZIP)",
-            data=zip_buffer,
-            file_name="fotos_corregidas.zip",
-            mime="application/zip"
-        )
+            with st.spinner("Corrigiendo sin alterar fondo..."):
+                bio, used_quality = corregir_sin_fondo(uploaded_file)
+
+            size_kb = bio.getbuffer().nbytes / 1024
+            if size_kb > MAX_FILESIZE_KB:
+                st.warning(f"Quedó en {size_kb:.1f} KB (> {MAX_FILESIZE_KB}). Mejor calidad posible (q={used_quality}).")
+            else:
+                st.success("✅ Imagen corregida dentro de los límites.")
+
+            st.image(bio, caption=f"Foto corregida (original fondo): {identificador}.jpg", width=220)
+            fotos_corregidas2.append((f"{identificador}.jpg", bio.getvalue()))
+
+        if fotos_corregidas2:
+            zip_buffer = io.BytesIO()
+            with zipfile.ZipFile(zip_buffer, "w") as zipf:
+                for nombre, data in fotos_corregidas2:
+                    zipf.writestr(nombre, data)
+            zip_buffer.seek(0)
+            st.download_button("📦 Descargar ZIP (mantener fondo)", data=zip_buffer, file_name="fotos_sin_fondo.zip", mime="application/zip")
